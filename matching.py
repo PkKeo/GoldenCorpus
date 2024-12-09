@@ -3,8 +3,6 @@ import os
 import unicodedata
 import re
 from difflib import SequenceMatcher
-import nltk
-from nltk.metrics.distance import edit_distance
 import time
 import sys
 import codecs
@@ -122,12 +120,75 @@ def process_file_content(content):
     content = ' '.join(content.split())
     return content
 
+def remove_diacritics(text):
+    """
+    Remove Vietnamese diacritics from text
+    """
+    diacritic_map = {
+        'à': 'a', 'á': 'a', 'ạ': 'a', 'ả': 'a', 'ã': 'a',
+        'â': 'a', 'ầ': 'a', 'ấ': 'a', 'ậ': 'a', 'ẩ': 'a', 'ẫ': 'a',
+        'ă': 'a', 'ằ': 'a', 'ắ': 'a', 'ặ': 'a', 'ẳ': 'a', 'ẵ': 'a',
+        'è': 'e', 'é': 'e', 'ẹ': 'e', 'ẻ': 'e', 'ẽ': 'e',
+        'ê': 'e', 'ề': 'e', 'ế': 'e', 'ệ': 'e', 'ể': 'e', 'ễ': 'e',
+        'ì': 'i', 'í': 'i', 'ị': 'i', 'ỉ': 'i', 'ĩ': 'i',
+        'ò': 'o', 'ó': 'o', 'ọ': 'o', 'ỏ': 'o', 'õ': 'o',
+        'ô': 'o', 'ồ': 'o', 'ố': 'o', 'ộ': 'o', 'ổ': 'o', 'ỗ': 'o',
+        'ơ': 'o', 'ờ': 'o', 'ớ': 'o', 'ợ': 'o', 'ở': 'o', 'ỡ': 'o',
+        'ù': 'u', 'ú': 'u', 'ụ': 'u', 'ủ': 'u', 'ũ': 'u',
+        'ư': 'u', 'ừ': 'u', 'ứ': 'u', 'ự': 'u', 'ử': 'u', 'ữ': 'u',
+        'ỳ': 'y', 'ý': 'y', 'ỵ': 'y', 'ỷ': 'y', 'ỹ': 'y',
+        'đ': 'd'
+    }
+    return ''.join(diacritic_map.get(c, c) for c in text)
+
 def contains_vietnamese(text):
     """
-    Check if text contains Vietnamese characters
+    Check if text contains Vietnamese characters or potential Vietnamese words without diacritics
     """
+    # Original check for Vietnamese diacritics
     vietnamese_pattern = r'[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]'
-    return bool(re.search(vietnamese_pattern, text.lower()))
+    if re.search(vietnamese_pattern, text.lower()):
+        return True
+
+    # Common Vietnamese words/syllables without diacritics
+    viet_common_words = {
+        'toi', 'ban', 'anh', 'chi', 'em', 'nguoi', 'minh', 'chung', 'no', 'ho',
+
+        'la', 'co', 'di', 'den', 've', 'noi', 'lam', 'biet', 'hieu', 'thay',
+        'nghe', 'nhin', 'muon', 'can', 'phai', 'duoc', 'dang', 'se', 'da',
+
+        'nha', 'truong', 'sach', 'ban', 'ghe', 'cua', 'xe', 'duong', 'cay',
+        'hoa', 'tien', 'bach', 'viec', 'nguoi', 'nuoc', 'dat', 'troi',
+
+        'trong', 'ngoai', 'tren', 'duoi', 'truoc', 'sau', 'giua', 'canh',
+        'gan', 'xa', 'day', 'do',
+
+        'gio', 'phut', 'giay', 'ngay', 'thang', 'nam', 'sang', 'trua',
+        'chieu', 'toi', 'dem', 'som', 'muon', 'luc', 'khi',
+
+        'ai', 'gi', 'nao', 'dau', 'sao', 'the', 'may', 'bao',
+
+        'mot', 'hai', 'ba', 'bon', 'nam', 'sau', 'bay', 'tam', 'chin', 'muoi',
+        'tram', 'nghin', 'trieu', 'nhieu', 'it',
+
+        'tot', 'xau', 'dep', 'lon', 'nho', 'cao', 'thap', 'moi', 'cu',
+        'khoe', 'yeu', 'manh', 'nong', 'lanh', 'vui', 'buon',
+
+        'va', 'hoac', 'nhung', 'ma', 'thi', 'nen', 'vi', 'boi', 'neu',
+        'khi', 'voi', 'cung', 'cho', 'de', 'den'
+    }
+
+    words = text.lower().split()
+    for word in words:
+        word = re.sub(r'[.,!?]', '', word)
+        if word in viet_common_words:
+            return True
+
+        word_no_diacritics = remove_diacritics(word)
+        if word_no_diacritics in viet_common_words:
+            return True
+
+    return False
 
 def get_edit_distance(str1, str2):
     """

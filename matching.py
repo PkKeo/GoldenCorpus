@@ -136,9 +136,11 @@ def preprocess_text(text, is_ocr=False):
 
 def find_valid_text_segment(text, start_pos, length, full_text):
     """
-    Find a valid text segment that satisfies all conditions
+    Find valid text segments that satisfy all conditions
+    Returns a list of (start, end) tuples for different length variations
     """
     max_search_distance = 50  # Maximum characters to look ahead/behind
+    variations = []
 
     # Search forward for valid start
     start = start_pos
@@ -148,31 +150,24 @@ def find_valid_text_segment(text, start_pos, length, full_text):
             start += 1
             continue
 
-        # Check if we're in the middle of a word
-        if not is_complete_word(text[start:start+length], start, start+length, full_text):
-            start += 1
-            continue
+        # Try different lengths
+        for l in [length - 1, length, length + 1]:  # Try original length and variations
+            if l <= 0:
+                continue
 
-        break
+            end = start + l
+            if end > len(text):
+                continue
 
-    # Search for valid end
-    end = start + length
-    while end > max(start, end - max_search_distance):
-        if end >= len(text) or text[end - 1] == '-':
-            end -= 1
-            continue
+            # Check if segment is valid
+            if is_complete_word(text[start:end], start, end, full_text):
+                if text[end-1] != '-':  # Ensure it doesn't end with hyphen
+                    if not variations or variations[-1] != (start, end):  # Avoid duplicates
+                        variations.append((start, end))
 
-        # Check if we're in the middle of a word
-        if not is_complete_word(text[start:end], start, end, full_text):
-            end -= 1
-            continue
+        start += 1
 
-        break
-
-    if start >= end or start >= len(text):
-        return None, None
-
-    return start, end
+    return variations if variations else [(None, None)]
 
 def process_file_content(content):
     """
@@ -236,25 +231,76 @@ def find_start_point(ocr_text, correct_text):
     # Step through text with larger steps for efficiency
     step_size = 10
     for i in range(0, len(correct_text) - window_size + 1, step_size):
-        # Find valid segment around this position
-        start, end = find_valid_text_segment(correct_text, i, window_size, correct_text)
-        if start is None:
-            continue
+        # Find complete word boundaries for this window
+        start_pos, end_pos = find_complete_word_boundaries(correct_text, i, window_size)
+        window = correct_text[start_pos:end_pos]
 
-        window = correct_text[start:end]
         if not is_valid_text_boundary(window)[0]:
             continue
 
         ratio = SequenceMatcher(None, ocr_text.lower(), window.lower()).ratio()
         if ratio > best_ratio:
             best_ratio = ratio
-            best_position = start
+            best_position = start_pos
             best_window = window
 
     print(f"Found start point with ratio {best_ratio:.2f}")
     print(f"Matching text: {best_window}")
     print(f"Start point search took {time.time() - start_time:.2f} seconds")
     return best_position, best_window
+
+def find_complete_word_boundaries(text, start_pos, base_length):
+    """
+    Extends the selection to include complete words
+    Returns start and end positions that include complete words
+    """
+    end_pos = start_pos + base_length
+
+    # Extend start backwards if in middle of word
+    while start_pos > 0 and text[start_pos-1].isalpha():
+        start_pos -= 1
+
+    # Extend end forwards if in middle of word
+    while end_pos < len(text) and text[end_pos-1].isalpha():
+        end_pos += 1
+
+    return start_pos, end_pos
+
+def get_word_variations(text, position, full_text):
+    """
+    Get variations of text by adding or removing complete words
+    Returns list of (text, end_position) tuples
+    """
+    variations = []
+
+    # First get the complete words in the current window
+    start_pos, end_pos = find_complete_word_boundaries(full_text, position, len(text))
+    complete_text = full_text[start_pos:end_pos]
+
+    # Split into words
+    words = complete_text.split()
+
+    if len(words) < 2:  # If only one word, just return complete word
+        return [(complete_text, end_pos)]
+
+    # Try with one word less
+    shorter = ' '.join(words[:-1])
+    variations.append((shorter, start_pos + len(shorter)))
+
+    # Original complete text
+    variations.append((complete_text, end_pos))
+
+    # Try adding one more word if possible
+    if end_pos < len(full_text):
+        next_word_match = re.search(r'^\s*\S+', full_text[end_pos:])
+        if next_word_match:
+            next_word = next_word_match.group()
+            # Find complete boundary of next word
+            _, next_end = find_complete_word_boundaries(full_text, end_pos, len(next_word))
+            longer = full_text[start_pos:next_end]
+            variations.append((longer, next_end))
+
+    return variations
 
 def match_texts(csv_path, text_folder):
     """
@@ -316,25 +362,35 @@ def match_texts(csv_path, text_folder):
             search_window = 200
             best_match = None
             best_score = float('inf')
+            best_start = None
 
             for i in range(max(0, correct_text_pointer - search_window),
                          min(len(correct_text), correct_text_pointer + search_window)):
-                start, end = find_valid_text_segment(correct_text, i, len(ocr_text), correct_text)
-                if start is None:
+
+                # Get base window
+                base_window = correct_text[i:i + len(ocr_text)]
+                if not is_valid_text_boundary(base_window)[0]:
                     continue
 
-                window = correct_text[start:end]
-                if not is_valid_text_boundary(window)[0]:
-                    continue
+                # Try variations with different word counts
+                variations = get_word_variations(base_window, i, correct_text)
 
-                score = get_edit_distance(ocr_text.lower(), window.lower())
-                position_penalty = abs(start - correct_text_pointer) / 100
-                total_score = score + position_penalty
+                for window, end_pos in variations:
+                    if not is_valid_text_boundary(window)[0]:
+                        continue
 
-                if total_score < best_score:
-                    best_score = total_score
-                    best_match = window
-                    correct_text_pointer = start + len(window)
+                    # Calculate score
+                    score = get_edit_distance(ocr_text.lower(), window.lower())
+                    position_penalty = abs(i - correct_text_pointer) / 100
+                    total_score = score + position_penalty
+
+                    if total_score < best_score:
+                        best_score = total_score
+                        best_match = window
+                        best_start = i
+
+            if best_start is not None:
+                correct_text_pointer = best_start + len(best_match)
 
         if best_match:
             best_match = unicodedata.normalize('NFC', best_match)
@@ -354,6 +410,6 @@ def match_texts(csv_path, text_folder):
     print(f"\nTotal processing time: {time.time() - start_time:.2f} seconds")
 
 if __name__ == "__main__":
-    csv_path = "input/OCR_custom 181_181.csv"
+    csv_path = "input/OCR_custom 181_210.csv"
     text_folder = "text/"
     match_texts(csv_path, text_folder)

@@ -19,6 +19,77 @@ def get_page_number(filename):
         return int(match.group(1))
     return 0
 
+def is_valid_text_boundary(text):
+    """
+    Check if text has valid start and end characters
+    Returns: bool, string with reason if invalid
+    """
+    if not text:
+        return False, "Empty text"
+
+    # Allow hyphen at start if it's followed by a space (dialogue)
+    if text[0] in '.,!?' or (text[0] == '-' and len(text) > 1 and not text[1].isspace()):
+        return False, "Invalid starting character"
+
+    # Last character can't be hyphen
+    if text[-1] == '-':
+        return False, "Invalid ending character (hyphen)"
+
+    return True, ""
+
+import pandas as pd
+import os
+import unicodedata
+import re
+from difflib import SequenceMatcher
+import nltk
+from nltk.metrics.distance import edit_distance
+import time
+import sys
+import codecs
+
+# Set console encoding to UTF-8
+sys.stdout.reconfigure(encoding='utf-8')
+
+def get_page_number(filename):
+    """Extract page number from filename and convert to integer"""
+    match = re.search(r'page(\d+)\.txt', filename)
+    if match:
+        return int(match.group(1))
+    return 0
+
+def is_valid_text_boundary(text):
+    """
+    Check if text has valid start and end characters
+    Returns: bool, string with reason if invalid
+    """
+    if not text:
+        return False, "Empty text"
+
+    # Allow hyphen at start if it's followed by a space (dialogue)
+    if text[0] in '.,!?' or (text[0] == '-' and len(text) > 1 and not text[1].isspace()):
+        return False, "Invalid starting character"
+
+    # Last character can't be hyphen
+    if text[-1] == '-':
+        return False, "Invalid ending character (hyphen)"
+
+    return True, ""
+
+def is_complete_word(text, start_pos, end_pos, full_text):
+    """
+    Check if the text segment contains complete words
+    """
+    # Check if we're cutting off a word at the start
+    if start_pos > 0 and full_text[start_pos-1].isalpha() and text[0].isalpha():
+        return False
+
+    # Check if we're cutting off a word at the end
+    if end_pos < len(full_text) and text[-1].isalpha() and full_text[end_pos].isalpha():
+        return False
+
+    return True
+
 def preprocess_text(text, is_ocr=False):
     """
     Preprocess text according to specified rules while preserving Vietnamese characters
@@ -52,16 +123,56 @@ def preprocess_text(text, is_ocr=False):
     # Strip extra spaces while preserving Vietnamese characters
     text = ' '.join(text.split())
 
-    # Remove spaces before punctuation
-    text = re.sub(r'\s+([.,!?])', r'\1', text)
+    # Remove spaces before punctuation except after dialogue hyphen
+    text = re.sub(r'(?<!-)\s+([.,!?])', r'\1', text)
 
-    # Ensure proper spacing around hyphens
-    text = re.sub(r'(?<=\S)-(?=\S)', ' - ', text)
+    # Ensure proper spacing around hyphens except dialogue
+    text = re.sub(r'(?<!^)(?<=\S)-(?=\S)', ' - ', text)
 
     # Convert ... to …
     text = text.replace('...', '…')
 
     return text
+
+def find_valid_text_segment(text, start_pos, length, full_text):
+    """
+    Find a valid text segment that satisfies all conditions
+    """
+    max_search_distance = 50  # Maximum characters to look ahead/behind
+
+    # Search forward for valid start
+    start = start_pos
+    while start < min(start_pos + max_search_distance, len(text)):
+        # Allow hyphen if it's dialogue (followed by space)
+        if text[start] in '.,!?' or (text[start] == '-' and start + 1 < len(text) and not text[start + 1].isspace()):
+            start += 1
+            continue
+
+        # Check if we're in the middle of a word
+        if not is_complete_word(text[start:start+length], start, start+length, full_text):
+            start += 1
+            continue
+
+        break
+
+    # Search for valid end
+    end = start + length
+    while end > max(start, end - max_search_distance):
+        if end >= len(text) or text[end - 1] == '-':
+            end -= 1
+            continue
+
+        # Check if we're in the middle of a word
+        if not is_complete_word(text[start:end], start, end, full_text):
+            end -= 1
+            continue
+
+        break
+
+    if start >= end or start >= len(text):
+        return None, None
+
+    return start, end
 
 def process_file_content(content):
     """
@@ -121,43 +232,29 @@ def find_start_point(ocr_text, correct_text):
     best_position = 0
     best_window = ""
     window_size = len(ocr_text)
-    total_windows = len(correct_text) - window_size + 1
 
-    for i in range(0, total_windows, 10):  # Step size of 10 to speed up search
-        window = correct_text[i:i + window_size]
+    # Step through text with larger steps for efficiency
+    step_size = 10
+    for i in range(0, len(correct_text) - window_size + 1, step_size):
+        # Find valid segment around this position
+        start, end = find_valid_text_segment(correct_text, i, window_size, correct_text)
+        if start is None:
+            continue
+
+        window = correct_text[start:end]
+        if not is_valid_text_boundary(window)[0]:
+            continue
+
         ratio = SequenceMatcher(None, ocr_text.lower(), window.lower()).ratio()
         if ratio > best_ratio:
             best_ratio = ratio
-            best_position = i
+            best_position = start
             best_window = window
 
     print(f"Found start point with ratio {best_ratio:.2f}")
     print(f"Matching text: {best_window}")
     print(f"Start point search took {time.time() - start_time:.2f} seconds")
     return best_position, best_window
-
-def is_punctuation_start(text):
-    """Check if text starts with punctuation"""
-    if not text:
-        return False
-    return text[0] in '.,!?'
-
-def find_valid_start(text, position):
-    """
-    Find a valid starting position that doesn't begin with punctuation
-    and doesn't split words
-    """
-    # If we're at a punctuation, move back to find the line start
-    if is_punctuation_start(text[position:]):
-        # Search backwards for the previous line's start
-        while position > 0 and text[position-1] not in '.!?\n':
-            position -= 1
-
-    # Now ensure we're not in the middle of a word
-    while position > 0 and text[position-1].isalpha():
-        position -= 1
-
-    return position
 
 def match_texts(csv_path, text_folder):
     """
@@ -171,136 +268,89 @@ def match_texts(csv_path, text_folder):
     df = pd.read_csv(csv_path, encoding='utf-8-sig')
     print(f"CSV file contains {len(df)} rows")
 
-    # Get and sort text files numerically
-    print(f"Reading text files from: {text_folder}")
-    text_files = []
-    for filename in os.listdir(text_folder):
-        if filename.endswith('.txt'):
-            text_files.append(filename)
+    # Get and sort text files
+    text_files = sorted(
+        [f for f in os.listdir(text_folder) if f.endswith('.txt')],
+        key=get_page_number
+    )
 
-    # Sort files by page number
-    text_files.sort(key=get_page_number)
-
-    # Read files in correct order with UTF-8 encoding
-    print("Reading files in numerical order:")
-    combined_text = {}
+    # Read and combine all text files
+    print("Reading and combining text files...")
+    correct_text = ""
     for filename in text_files:
-        page_num = get_page_number(filename)
-        print(f"Processing page {page_num} ({filename})")
         with codecs.open(os.path.join(text_folder, filename), 'r', encoding='utf-8-sig') as f:
-            # Process content to single line while reading
-            text_content = process_file_content(f.read())
-            text_content = unicodedata.normalize('NFC', text_content)
-            combined_text[page_num] = text_content
+            content = process_file_content(f.read())
+            # Preserve leading hyphens for dialogue
+            if content.startswith('- '):
+                correct_text += "\n" + content if correct_text else content
+            else:
+                correct_text += " " + content if correct_text else content
 
-    print(f"Found {len(combined_text)} text files")
+    correct_text = unicodedata.normalize('NFC', correct_text)
 
-    # Combine all text files in order
-    print("Combining text files...")
-    correct_text = ' '.join(combined_text[page] for page in sorted(combined_text.keys()))
-
-    print(f"Total length of combined text: {len(correct_text)} characters")
-
-    # Initialize pointers
+    # Initialize pointer and process rows
     correct_text_pointer = 0
-
-    # Add correct_text column if it doesn't exist
     if 'correct_text' not in df.columns:
         df['correct_text'] = None
 
-    # Process each row in CSV
     print("\nProcessing OCR text rows...")
     for index, row in df.iterrows():
         row_start_time = time.time()
         print(f"\nProcessing row {index + 1}/{len(df)}")
 
-        # Skip if already processed
         if pd.notna(row.get('correct_text')):
             print(f"Row {index + 1} already processed, skipping...")
             continue
 
-        # Ensure OCR text is properly encoded
-        ocr_text = str(row['OCR_text'])
-        ocr_text = unicodedata.normalize('NFC', ocr_text)
-        print(f"OCR text: {ocr_text}")
+        ocr_text = unicodedata.normalize('NFC', str(row['OCR_text']))
 
-        # Skip if no Vietnamese characters
         if not contains_vietnamese(ocr_text):
             print(f"Row {index + 1} has no Vietnamese characters, skipping...")
             continue
 
-        # If this is the first row or we've lost track, find start point
+        # Search for matching text
         if index == 0 or correct_text_pointer >= len(correct_text):
-            print("Finding start point...")
             position, best_match = find_start_point(ocr_text, correct_text)
             correct_text_pointer = position
-
-            # Use the exact match we found
-            best_match = unicodedata.normalize('NFC', best_match)
-            print(f"Using match: {best_match}")
-            df.at[index, 'correct_text'] = best_match
-            correct_text_pointer = position + len(best_match)
         else:
-            # For subsequent matches, search in a smaller window around the current pointer
-            print(f"Searching for match around position {correct_text_pointer}")
+            search_window = 200
             best_match = None
             best_score = float('inf')
-            search_window = 200  # Reduced window size
 
-            search_start_time = time.time()
-            match_count = 0
+            for i in range(max(0, correct_text_pointer - search_window),
+                         min(len(correct_text), correct_text_pointer + search_window)):
+                start, end = find_valid_text_segment(correct_text, i, len(ocr_text), correct_text)
+                if start is None:
+                    continue
 
-            # First try an exact match at the current pointer
-            current_window = correct_text[correct_text_pointer:correct_text_pointer + len(ocr_text)]
-            if current_window.lower() == ocr_text.lower():
-                best_match = current_window
-            else:
-                # If no exact match, search in the window
-                for i in range(max(0, correct_text_pointer - search_window),
-                             min(len(correct_text), correct_text_pointer + search_window)):
-                    # Skip if position starts with punctuation
-                    if is_punctuation_start(correct_text[i:]):
-                        continue
+                window = correct_text[start:end]
+                if not is_valid_text_boundary(window)[0]:
+                    continue
 
-                    # Skip if we're in the middle of a word
-                    if i > 0 and correct_text[i-1].isalpha() and correct_text[i].isalpha():
-                        continue
+                score = get_edit_distance(ocr_text.lower(), window.lower())
+                position_penalty = abs(start - correct_text_pointer) / 100
+                total_score = score + position_penalty
 
-                    window = correct_text[i:i + len(ocr_text)]
+                if total_score < best_score:
+                    best_score = total_score
+                    best_match = window
+                    correct_text_pointer = start + len(window)
 
-                    # Calculate similarity score
-                    score = get_edit_distance(ocr_text.lower(), window.lower())
-                    position_penalty = abs(i - correct_text_pointer) / 100  # Penalty for being far from expected position
-                    total_score = score + position_penalty
-
-                    match_count += 1
-
-                    if total_score < best_score:
-                        best_score = total_score
-                        best_match = window
-                        correct_text_pointer = i + len(window)
-
-            if best_match:
-                best_match = unicodedata.normalize('NFC', best_match)
-                print(f"Found match with score {best_score if 'best_score' in locals() else 0}")
-                print(f"OCR text: {ocr_text}")
-                print(f"Best match: {best_match}")
-                df.at[index, 'correct_text'] = best_match
-
-            print(f"Compared {match_count} possible matches")
-            print(f"Search took {time.time() - search_start_time:.2f} seconds")
+        if best_match:
+            best_match = unicodedata.normalize('NFC', best_match)
+            df.at[index, 'correct_text'] = best_match
+            print(f"Found match: {best_match}")
 
         print(f"Row processing took {time.time() - row_start_time:.2f} seconds")
 
-        # Save periodically with UTF-8 encoding
+        # Save periodically
         if index % 10 == 0:
             print("Saving progress...")
             df.to_csv(csv_path, index=False, encoding='utf-8-sig')
 
-    # Final save with UTF-8 encoding
+    # Final save
     print("\nSaving final results...")
     df.to_csv(csv_path, index=False, encoding='utf-8-sig')
-
     print(f"\nTotal processing time: {time.time() - start_time:.2f} seconds")
 
 if __name__ == "__main__":

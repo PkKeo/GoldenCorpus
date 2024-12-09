@@ -84,11 +84,13 @@ def preprocess_text(text, is_ocr=False):
     # Strip extra spaces while preserving Vietnamese characters
     text = ' '.join(text.split())
 
-    # Remove spaces before punctuation except after dialogue hyphen
-    text = re.sub(r'(?<!-)\s+([.,!?])', r'\1', text)
+    # Special case: preserve space after colon followed by hyphen or en dash
+    text = re.sub(r':\s*[-–]\s*', ': -', text)
 
-    # Ensure proper spacing around hyphens except dialogue
-    text = re.sub(r'(?<!^)(?<=\S)-(?=\S)', ' - ', text)
+    # Remove spaces before punctuation, hyphen and en dash
+    text = re.sub(r'\s+([.,!?])', r'\1', text)
+    text = re.sub(r'\s+[-–]\s*', r' -', text)  # Keep one space before hyphen/en dash
+    text = re.sub(r'[-–]\s+', r'-', text)      # Remove space after hyphen/en dash
 
     # Convert ... to …
     text = text.replace('...', '…')
@@ -182,7 +184,7 @@ def find_start_point(ocr_text, correct_text):
     """
     Find the starting point in correct text that best matches the first OCR text
     """
-    print(f"Finding start point for text: {ocr_text[:50]}...")
+    # print(f"Finding start point for text: {ocr_text[:50]}...")
     start_time = time.time()
     best_ratio = 0
     best_position = 0
@@ -194,7 +196,7 @@ def find_start_point(ocr_text, correct_text):
     for i in range(0, len(correct_text) - window_size + 1, step_size):
         # Find complete word boundaries for this window
         start_pos, end_pos = find_complete_word_boundaries(correct_text, i, window_size)
-        window = correct_text[start_pos:end_pos]
+        window = correct_text[start_pos:end_pos].rstrip()
 
         if not is_valid_text_boundary(window)[0]:
             continue
@@ -205,9 +207,9 @@ def find_start_point(ocr_text, correct_text):
             best_position = start_pos
             best_window = window
 
-    print(f"Found start point with ratio {best_ratio:.2f}")
-    print(f"Matching text: {best_window}")
-    print(f"Start point search took {time.time() - start_time:.2f} seconds")
+    # print(f"Found start point with ratio {best_ratio:.2f}")
+    # print(f"Matching text: {best_window}")
+    # print(f"Start point search took {time.time() - start_time:.2f} seconds")
     return best_position, best_window
 
 def find_complete_word_boundaries(text, start_pos, base_length):
@@ -221,21 +223,24 @@ def find_complete_word_boundaries(text, start_pos, base_length):
     while start_pos > 0 and text[start_pos-1].isalpha():
         start_pos -= 1
 
-    # Extend end forwards if in middle of word, but stop at colon
+    # Find colon position if exists
+    colon_pos = text.find(':', start_pos, end_pos + 10)  # Look a bit ahead for colon
+    if colon_pos != -1:
+        return start_pos, colon_pos + 1  # Include the colon but nothing after
+
+    # If no colon, extend end forwards if in middle of word
     while end_pos < len(text):
-        if text[end_pos-1] == ':':
-            break
         if text[end_pos-1].isalpha():
             end_pos += 1
         else:
             break
 
-    # If we end with a colon, include it but not what follows
-    if end_pos < len(text) and text[end_pos-1] == ':':
-        return start_pos, end_pos
-
-    # Trim back if we end up with en dash
+    # Trim back if we end up with hyphen or en dash
     while end_pos > start_pos and (text[end_pos-1] == '–' or text[end_pos-1] == '-'):
+        end_pos -= 1
+
+    # Trim trailing whitespace
+    while end_pos > start_pos and text[end_pos-1].isspace():
         end_pos -= 1
 
     return start_pos, end_pos
@@ -251,33 +256,28 @@ def get_word_variations(text, position, full_text):
     start_pos, end_pos = find_complete_word_boundaries(full_text, position, len(text))
     complete_text = full_text[start_pos:end_pos]
 
-    # Split into words, preserving colon if present
-    if ':' in complete_text:
-        base_parts = complete_text.split(':')
-        words = base_parts[0].split()
-        has_colon = True
-    else:
-        words = complete_text.split()
-        has_colon = False
+    # If text ends with colon, only return that exact match
+    if complete_text.endswith(':'):
+        return [(complete_text, end_pos)]
+
+    # Otherwise proceed with normal variations
+    words = complete_text.split()
 
     if len(words) < 2:  # If only one word, just return complete word
         return [(complete_text, end_pos)]
 
     # Try with one word less
     shorter = ' '.join(words[:-1])
-    if has_colon:
-        shorter += ':'
     variations.append((shorter, start_pos + len(shorter)))
 
     # Original complete text
     variations.append((complete_text, end_pos))
 
-    # Try adding one more word if possible, but only if we don't end with colon
-    if not has_colon and end_pos < len(full_text):
+    # Try adding one more word if possible
+    if end_pos < len(full_text):
         next_word_match = re.search(r'^\s*\S+', full_text[end_pos:])
         if next_word_match:
             next_word = next_word_match.group()
-            # Find complete boundary of next word
             _, next_end = find_complete_word_boundaries(full_text, end_pos, len(next_word))
             longer = full_text[start_pos:next_end]
             variations.append((longer, next_end))
@@ -301,12 +301,12 @@ def match_texts(csv_path, text_folder):
     Main function to match OCR text with correct text
     """
     start_time = time.time()
-    print(f"Starting text matching process...")
+    # print(f"Starting text matching process...")
 
     # Read CSV file with UTF-8 encoding
-    print(f"Reading CSV file: {csv_path}")
+    # print(f"Reading CSV file: {csv_path}")
     df = pd.read_csv(csv_path, encoding='utf-8-sig')
-    print(f"CSV file contains {len(df)} rows")
+    # print(f"CSV file contains {len(df)} rows")
 
     # Get and sort text files
     text_files = sorted(
@@ -315,7 +315,7 @@ def match_texts(csv_path, text_folder):
     )
 
     # Read and combine all text files
-    print("Reading and combining text files...")
+    # print("Reading and combining text files...")
     correct_text = ""
     for filename in text_files:
         with codecs.open(os.path.join(text_folder, filename), 'r', encoding='utf-8-sig') as f:
@@ -333,19 +333,20 @@ def match_texts(csv_path, text_folder):
     if 'correct_text' not in df.columns:
         df['correct_text'] = None
 
-    print("\nProcessing OCR text rows...")
+    # print("\nProcessing OCR text rows...")
+    row_start_time = time.time()
     for index, row in df.iterrows():
-        row_start_time = time.time()
-        print(f"\nProcessing row {index + 1}/{len(df)}")
+        # row_start_time = time.time()
+        # print(f"\nProcessing row {index + 1}/{len(df)}")
 
         if pd.notna(row.get('correct_text')):
-            print(f"Row {index + 1} already processed, skipping...")
+            # print(f"Row {index + 1} already processed, skipping...")
             continue
 
         ocr_text = unicodedata.normalize('NFC', str(row['OCR_text']))
 
         if not contains_vietnamese(ocr_text):
-            print(f"Row {index + 1} has no Vietnamese characters, skipping...")
+            # print(f"Row {index + 1} has no Vietnamese characters, skipping...")
             continue
 
         # Search for matching text
@@ -389,19 +390,21 @@ def match_texts(csv_path, text_folder):
         if best_match:
             best_match = unicodedata.normalize('NFC', best_match)
             df.at[index, 'correct_text'] = best_match
-            print(f"Found match: {best_match}")
+            # print(f"Found match: {best_match}")
 
-        print(f"Row processing took {time.time() - row_start_time:.2f} seconds")
+        # print(f"Row processing took {time.time() - row_start_time:.2f} seconds")
 
         # Save periodically
         if index % 10 == 0:
             print("Saving progress...")
+            print(f"Time took {time.time() - row_start_time:.2f} seconds")
+            row_start_time = time.time()
             df.to_csv(csv_path, index=False, encoding='utf-8-sig')
 
     # Final save
-    print("\nSaving final results...")
+    # print("\nSaving final results...")
     df.to_csv(csv_path, index=False, encoding='utf-8-sig')
-    print(f"\nTotal processing time: {time.time() - start_time:.2f} seconds")
+    # print(f"\nTotal processing time: {time.time() - start_time:.2f} seconds")
 
 if __name__ == "__main__":
     csv_path = "input/OCR_custom 181_210.csv"

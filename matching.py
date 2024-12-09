@@ -165,9 +165,9 @@ def find_start_point(ocr_text, correct_text):
     """
     # print(f"Finding start point for text: {ocr_text[:50]}...")
     start_time = time.time()
+
     best_ratio = 0
     best_position = 0
-    best_window = ""
     window_size = len(ocr_text)
 
     step_size = 10
@@ -182,11 +182,26 @@ def find_start_point(ocr_text, correct_text):
         if ratio > best_ratio:
             best_ratio = ratio
             best_position = start_pos
+
+    best_window = ""
+    final_ratio = best_ratio
+
+    variations = get_word_variations(correct_text[best_position:best_position + window_size],
+                                   best_position,
+                                   correct_text)
+
+    for window, end_pos in variations:
+        if not is_valid_text_boundary(window)[0]:
+            continue
+
+        ratio = SequenceMatcher(None, ocr_text.lower(), window.lower()).ratio()
+        if ratio > final_ratio:
+            final_ratio = ratio
             best_window = window
 
-    # print(f"Found start point with ratio {best_ratio:.2f}")
-    # print(f"Matching text: {best_window}")
-    # print(f"Start point search took {time.time() - start_time:.2f} seconds")
+    if not best_window:  # If no better variation found, use original window
+        best_window = correct_text[best_position:best_position + window_size].rstrip()
+
     return best_position, best_window
 
 def find_complete_word_boundaries(text, start_pos, base_length):
@@ -293,8 +308,9 @@ def match_texts(csv_path, text_folder):
         df['correct_text'] = None
 
     # print("\nProcessing OCR text rows...")
-    row_start_time = time.time()
+    gap_start_time = time.time()
     for index, row in df.iterrows():
+        row_start_time = time.time()
         # print(f"\nProcessing row {index + 1}/{len(df)}")
 
         if pd.notna(row.get('correct_text')):
@@ -348,15 +364,14 @@ def match_texts(csv_path, text_folder):
 
         # print(f"Row processing took {time.time() - row_start_time:.2f} seconds")
 
-        if index % 10 == 0:
-            print("Saving progress...")
-            print(f"Time took {time.time() - row_start_time:.2f} seconds")
-            row_start_time = time.time()
-            df.to_csv(csv_path, index=False, encoding='utf-8-sig')
+        if index % 20 == 0:
+            print(f"Saving progress with {time.time() - gap_start_time:.2f} seconds")
+            gap_start_time = time.time()
+            df.to_csv(csv_path, index=False, encoding='utf-8-sig', lineterminator='\n')
 
-    # print("\nSaving final results...")
-    df.to_csv(csv_path, index=False, encoding='utf-8-sig')
-    # print(f"\nTotal processing time: {time.time() - start_time:.2f} seconds")
+    print("\nSaving final results...")
+    df.to_csv(csv_path, index=False, encoding='utf-8-sig', lineterminator='\n')
+    print(f"\nTotal processing time: {time.time() - start_time:.2f} seconds")
 
 if __name__ == "__main__":
     csv_path = "input/OCR_custom 181_210.csv"

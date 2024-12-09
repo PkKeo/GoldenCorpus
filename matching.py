@@ -31,48 +31,9 @@ def is_valid_text_boundary(text):
     if text[0] in '.,!?' or (text[0] == '-' and len(text) > 1 and not text[1].isspace()):
         return False, "Invalid starting character"
 
-    # Last character can't be hyphen
-    if text[-1] == '-':
-        return False, "Invalid ending character (hyphen)"
-
-    return True, ""
-
-import pandas as pd
-import os
-import unicodedata
-import re
-from difflib import SequenceMatcher
-import nltk
-from nltk.metrics.distance import edit_distance
-import time
-import sys
-import codecs
-
-# Set console encoding to UTF-8
-sys.stdout.reconfigure(encoding='utf-8')
-
-def get_page_number(filename):
-    """Extract page number from filename and convert to integer"""
-    match = re.search(r'page(\d+)\.txt', filename)
-    if match:
-        return int(match.group(1))
-    return 0
-
-def is_valid_text_boundary(text):
-    """
-    Check if text has valid start and end characters
-    Returns: bool, string with reason if invalid
-    """
-    if not text:
-        return False, "Empty text"
-
-    # Allow hyphen at start if it's followed by a space (dialogue)
-    if text[0] in '.,!?' or (text[0] == '-' and len(text) > 1 and not text[1].isspace()):
-        return False, "Invalid starting character"
-
-    # Last character can't be hyphen
-    if text[-1] == '-':
-        return False, "Invalid ending character (hyphen)"
+    # Last character can't be hyphen or en dash
+    if text[-1] == '-' or text[-1] == '–':
+        return False, "Invalid ending character (hyphen or en dash)"
 
     return True, ""
 
@@ -251,7 +212,7 @@ def find_start_point(ocr_text, correct_text):
 
 def find_complete_word_boundaries(text, start_pos, base_length):
     """
-    Extends the selection to include complete words
+    Extends the selection to include complete words, but stops at colon
     Returns start and end positions that include complete words
     """
     end_pos = start_pos + base_length
@@ -260,9 +221,22 @@ def find_complete_word_boundaries(text, start_pos, base_length):
     while start_pos > 0 and text[start_pos-1].isalpha():
         start_pos -= 1
 
-    # Extend end forwards if in middle of word
-    while end_pos < len(text) and text[end_pos-1].isalpha():
-        end_pos += 1
+    # Extend end forwards if in middle of word, but stop at colon
+    while end_pos < len(text):
+        if text[end_pos-1] == ':':
+            break
+        if text[end_pos-1].isalpha():
+            end_pos += 1
+        else:
+            break
+
+    # If we end with a colon, include it but not what follows
+    if end_pos < len(text) and text[end_pos-1] == ':':
+        return start_pos, end_pos
+
+    # Trim back if we end up with en dash
+    while end_pos > start_pos and (text[end_pos-1] == '–' or text[end_pos-1] == '-'):
+        end_pos -= 1
 
     return start_pos, end_pos
 
@@ -277,21 +251,29 @@ def get_word_variations(text, position, full_text):
     start_pos, end_pos = find_complete_word_boundaries(full_text, position, len(text))
     complete_text = full_text[start_pos:end_pos]
 
-    # Split into words
-    words = complete_text.split()
+    # Split into words, preserving colon if present
+    if ':' in complete_text:
+        base_parts = complete_text.split(':')
+        words = base_parts[0].split()
+        has_colon = True
+    else:
+        words = complete_text.split()
+        has_colon = False
 
     if len(words) < 2:  # If only one word, just return complete word
         return [(complete_text, end_pos)]
 
     # Try with one word less
     shorter = ' '.join(words[:-1])
+    if has_colon:
+        shorter += ':'
     variations.append((shorter, start_pos + len(shorter)))
 
     # Original complete text
     variations.append((complete_text, end_pos))
 
-    # Try adding one more word if possible
-    if end_pos < len(full_text):
+    # Try adding one more word if possible, but only if we don't end with colon
+    if not has_colon and end_pos < len(full_text):
         next_word_match = re.search(r'^\s*\S+', full_text[end_pos:])
         if next_word_match:
             next_word = next_word_match.group()
@@ -301,6 +283,18 @@ def get_word_variations(text, position, full_text):
             variations.append((longer, next_end))
 
     return variations
+
+def find_next_word_start(text, current_pos):
+    """
+    Find the start position of the next word after current_pos
+    """
+    # Skip any spaces after current position
+    pos = current_pos
+    while pos < len(text) and text[pos].isspace():
+        pos += 1
+
+    # Now we're at the start of the next word
+    return pos
 
 def match_texts(csv_path, text_folder):
     """

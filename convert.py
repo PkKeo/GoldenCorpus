@@ -1,7 +1,19 @@
 import os
+import codecs
 import pandas as pd
 
+text_folder_path = os.path.join(os.getcwd(), 'text')
 folder_path = os.path.join(os.getcwd(), 'input')
+
+for file_name in os.listdir(text_folder_path):
+    if file_name.endswith('.txt'):
+        txt_file = os.path.join(text_folder_path, file_name)
+
+        with codecs.open(txt_file, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+
+        with codecs.open(txt_file, 'w', encoding='utf-8') as f:
+            f.write(content)
 
 for file_name in os.listdir(folder_path):
     if file_name.endswith('.xlsx'):

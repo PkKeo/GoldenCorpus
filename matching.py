@@ -9,7 +9,6 @@ import time
 import sys
 import codecs
 
-# Set console encoding to UTF-8
 sys.stdout.reconfigure(encoding='utf-8')
 
 def get_page_number(filename):
@@ -27,11 +26,9 @@ def is_valid_text_boundary(text):
     if not text:
         return False, "Empty text"
 
-    # Allow hyphen at start if it's followed by a space (dialogue)
     if text[0] in '.,!?' or (text[0] == '-' and len(text) > 1 and not text[1].isspace()):
         return False, "Invalid starting character"
 
-    # Last character can't be hyphen or en dash
     if text[-1] == '-' or text[-1] == '–':
         return False, "Invalid ending character (hyphen or en dash)"
 
@@ -41,11 +38,9 @@ def is_complete_word(text, start_pos, end_pos, full_text):
     """
     Check if the text segment contains complete words
     """
-    # Check if we're cutting off a word at the start
     if start_pos > 0 and full_text[start_pos-1].isalpha() and text[0].isalpha():
         return False
 
-    # Check if we're cutting off a word at the end
     if end_pos < len(full_text) and text[-1].isalpha() and full_text[end_pos].isalpha():
         return False
 
@@ -58,16 +53,12 @@ def preprocess_text(text, is_ocr=False):
     if not isinstance(text, str):
         text = str(text)
 
-    # Convert newlines to spaces
     text = ' '.join(text.splitlines())
 
-    # Convert to lowercase while preserving Vietnamese characters
     text = text.lower()
 
-    # Normalize Unicode characters (NFC preserves Vietnamese characters)
     text = unicodedata.normalize('NFC', text)
 
-    # Character replacements
     replacements = {
         'f': 't',
         'j': 'i',
@@ -78,21 +69,16 @@ def preprocess_text(text, is_ocr=False):
     for old, new in replacements.items():
         text = text.replace(old, new)
 
-    # Remove hyphens within words
     text = re.sub(r'(?<=\w)-(?=\w)', '', text)
 
-    # Strip extra spaces while preserving Vietnamese characters
     text = ' '.join(text.split())
 
-    # Special case: preserve space after colon followed by hyphen or en dash
     text = re.sub(r':\s*[-–]\s*', ': -', text)
 
-    # Remove spaces before punctuation, hyphen and en dash
     text = re.sub(r'\s+([.,!?])', r'\1', text)
     text = re.sub(r'\s+[-–]\s*', r' -', text)  # Keep one space before hyphen/en dash
     text = re.sub(r'[-–]\s+', r'-', text)      # Remove space after hyphen/en dash
 
-    # Convert ... to …
     text = text.replace('...', '…')
 
     return text
@@ -105,15 +91,12 @@ def find_valid_text_segment(text, start_pos, length, full_text):
     max_search_distance = 50  # Maximum characters to look ahead/behind
     variations = []
 
-    # Search forward for valid start
     start = start_pos
     while start < min(start_pos + max_search_distance, len(text)):
-        # Allow hyphen if it's dialogue (followed by space)
         if text[start] in '.,!?' or (text[start] == '-' and start + 1 < len(text) and not text[start + 1].isspace()):
             start += 1
             continue
 
-        # Try different lengths
         for l in [length - 1, length, length + 1]:  # Try original length and variations
             if l <= 0:
                 continue
@@ -122,7 +105,6 @@ def find_valid_text_segment(text, start_pos, length, full_text):
             if end > len(text):
                 continue
 
-            # Check if segment is valid
             if is_complete_word(text[start:end], start, end, full_text):
                 if text[end-1] != '-':  # Ensure it doesn't end with hyphen
                     if not variations or variations[-1] != (start, end):  # Avoid duplicates
@@ -136,9 +118,7 @@ def process_file_content(content):
     """
     Process file content to convert multiline text to single line
     """
-    # Replace newlines with spaces
     content = ' '.join(content.splitlines())
-    # Remove extra spaces
     content = ' '.join(content.split())
     return content
 
@@ -153,7 +133,6 @@ def get_edit_distance(str1, str2):
     """
     Calculate edit distance between two strings using dynamic programming
     """
-    # Ensure both strings are properly encoded
     if not isinstance(str1, str):
         str1 = str(str1)
     if not isinstance(str2, str):
@@ -175,7 +154,7 @@ def get_edit_distance(str1, str2):
             if str1[i-1] == str2[j-1]:
                 dp[i][j] = dp[i-1][j-1]
             else:
-                dp[i][j] = 1 + min(dp[i-1][j],    # deletion
+                dp[i][j] = 1 + min(dp[i-1][j],  # deletion
                                  dp[i][j-1],    # insertion
                                  dp[i-1][j-1])  # substitution
     return dp[m][n]
@@ -191,10 +170,8 @@ def find_start_point(ocr_text, correct_text):
     best_window = ""
     window_size = len(ocr_text)
 
-    # Step through text with larger steps for efficiency
     step_size = 10
     for i in range(0, len(correct_text) - window_size + 1, step_size):
-        # Find complete word boundaries for this window
         start_pos, end_pos = find_complete_word_boundaries(correct_text, i, window_size)
         window = correct_text[start_pos:end_pos].rstrip()
 
@@ -219,27 +196,22 @@ def find_complete_word_boundaries(text, start_pos, base_length):
     """
     end_pos = start_pos + base_length
 
-    # Extend start backwards if in middle of word
     while start_pos > 0 and text[start_pos-1].isalpha():
         start_pos -= 1
 
-    # Find colon position if exists
     colon_pos = text.find(':', start_pos, end_pos + 10)  # Look a bit ahead for colon
     if colon_pos != -1:
         return start_pos, colon_pos + 1  # Include the colon but nothing after
 
-    # If no colon, extend end forwards if in middle of word
     while end_pos < len(text):
         if text[end_pos-1].isalpha():
             end_pos += 1
         else:
             break
 
-    # Trim back if we end up with hyphen or en dash
     while end_pos > start_pos and (text[end_pos-1] == '–' or text[end_pos-1] == '-'):
         end_pos -= 1
 
-    # Trim trailing whitespace
     while end_pos > start_pos and text[end_pos-1].isspace():
         end_pos -= 1
 
@@ -252,28 +224,22 @@ def get_word_variations(text, position, full_text):
     """
     variations = []
 
-    # First get the complete words in the current window
     start_pos, end_pos = find_complete_word_boundaries(full_text, position, len(text))
     complete_text = full_text[start_pos:end_pos]
 
-    # If text ends with colon, only return that exact match
     if complete_text.endswith(':'):
         return [(complete_text, end_pos)]
 
-    # Otherwise proceed with normal variations
     words = complete_text.split()
 
     if len(words) < 2:  # If only one word, just return complete word
         return [(complete_text, end_pos)]
 
-    # Try with one word less
     shorter = ' '.join(words[:-1])
     variations.append((shorter, start_pos + len(shorter)))
 
-    # Original complete text
     variations.append((complete_text, end_pos))
 
-    # Try adding one more word if possible
     if end_pos < len(full_text):
         next_word_match = re.search(r'^\s*\S+', full_text[end_pos:])
         if next_word_match:
@@ -288,12 +254,10 @@ def find_next_word_start(text, current_pos):
     """
     Find the start position of the next word after current_pos
     """
-    # Skip any spaces after current position
     pos = current_pos
     while pos < len(text) and text[pos].isspace():
         pos += 1
 
-    # Now we're at the start of the next word
     return pos
 
 def match_texts(csv_path, text_folder):
@@ -303,24 +267,20 @@ def match_texts(csv_path, text_folder):
     start_time = time.time()
     # print(f"Starting text matching process...")
 
-    # Read CSV file with UTF-8 encoding
     # print(f"Reading CSV file: {csv_path}")
     df = pd.read_csv(csv_path, encoding='utf-8-sig')
     # print(f"CSV file contains {len(df)} rows")
 
-    # Get and sort text files
     text_files = sorted(
         [f for f in os.listdir(text_folder) if f.endswith('.txt')],
         key=get_page_number
     )
 
-    # Read and combine all text files
     # print("Reading and combining text files...")
     correct_text = ""
     for filename in text_files:
         with codecs.open(os.path.join(text_folder, filename), 'r', encoding='utf-8-sig') as f:
             content = process_file_content(f.read())
-            # Preserve leading hyphens for dialogue
             if content.startswith('- '):
                 correct_text += "\n" + content if correct_text else content
             else:
@@ -328,7 +288,6 @@ def match_texts(csv_path, text_folder):
 
     correct_text = unicodedata.normalize('NFC', correct_text)
 
-    # Initialize pointer and process rows
     correct_text_pointer = 0
     if 'correct_text' not in df.columns:
         df['correct_text'] = None
@@ -336,7 +295,6 @@ def match_texts(csv_path, text_folder):
     # print("\nProcessing OCR text rows...")
     row_start_time = time.time()
     for index, row in df.iterrows():
-        # row_start_time = time.time()
         # print(f"\nProcessing row {index + 1}/{len(df)}")
 
         if pd.notna(row.get('correct_text')):
@@ -349,7 +307,6 @@ def match_texts(csv_path, text_folder):
             # print(f"Row {index + 1} has no Vietnamese characters, skipping...")
             continue
 
-        # Search for matching text
         if index == 0 or correct_text_pointer >= len(correct_text):
             position, best_match = find_start_point(ocr_text, correct_text)
             correct_text_pointer = position
@@ -362,19 +319,16 @@ def match_texts(csv_path, text_folder):
             for i in range(max(0, correct_text_pointer - search_window),
                          min(len(correct_text), correct_text_pointer + search_window)):
 
-                # Get base window
                 base_window = correct_text[i:i + len(ocr_text)]
                 if not is_valid_text_boundary(base_window)[0]:
                     continue
 
-                # Try variations with different word counts
                 variations = get_word_variations(base_window, i, correct_text)
 
                 for window, end_pos in variations:
                     if not is_valid_text_boundary(window)[0]:
                         continue
 
-                    # Calculate score
                     score = get_edit_distance(ocr_text.lower(), window.lower())
                     position_penalty = abs(i - correct_text_pointer) / 100
                     total_score = score + position_penalty
@@ -394,14 +348,12 @@ def match_texts(csv_path, text_folder):
 
         # print(f"Row processing took {time.time() - row_start_time:.2f} seconds")
 
-        # Save periodically
         if index % 10 == 0:
             print("Saving progress...")
             print(f"Time took {time.time() - row_start_time:.2f} seconds")
             row_start_time = time.time()
             df.to_csv(csv_path, index=False, encoding='utf-8-sig')
 
-    # Final save
     # print("\nSaving final results...")
     df.to_csv(csv_path, index=False, encoding='utf-8-sig')
     # print(f"\nTotal processing time: {time.time() - start_time:.2f} seconds")

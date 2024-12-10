@@ -78,16 +78,6 @@ def is_valid_text_boundary(text):
 
     return True, ""
 
-def is_complete_word(text, start_pos, end_pos, full_text):
-    """Check if the text segment contains complete words"""
-    if start_pos > 0 and full_text[start_pos-1].isalpha() and text[0].isalpha():
-        return False
-
-    if end_pos < len(full_text) and text[-1].isalpha() and full_text[end_pos].isalpha():
-        return False
-
-    return True
-
 def preprocess_text(text, is_ocr=False):
     """Preprocess text according to specified rules while preserving Vietnamese characters"""
     if not isinstance(text, str):
@@ -200,13 +190,98 @@ def get_word_variations(text, position, full_text):
 
     return variations
 
+def get_word_variations_both_ends(text, position, full_text):
+    """
+    Get variations of text by modifying both first and last words
+    Returns list of (text, start_position, end_position) tuples
+    """
+    variations = []
+    start_pos, end_pos = find_complete_word_boundaries(full_text, position, len(text))
+    complete_text = full_text[start_pos:end_pos]
+
+    if complete_text.endswith(':'):
+        return [(complete_text, start_pos, end_pos)]
+
+    words = complete_text.split()
+
+    if len(words) < 3:  # Need at least 3 words to create meaningful variations
+        return [(complete_text, start_pos, end_pos)]
+
+    # Find previous word if exists
+    prev_word = ''
+    prev_start = start_pos
+    if start_pos > 0:
+        prev_match = re.search(r'\S+\s*$', full_text[:start_pos])
+        if prev_match:
+            prev_word = prev_match.group()
+            prev_start = start_pos - len(prev_word)
+
+    # Find next word if exists
+    next_word = ''
+    next_end = end_pos
+    if end_pos < len(full_text):
+        next_match = re.search(r'^\s*\S+', full_text[end_pos:])
+        if next_match:
+            next_word = next_match.group()
+            next_end = end_pos + len(next_word)
+
+    # Generate all 9 variations
+    variations = [
+        # Base text (keep first, keep last)
+        (complete_text, start_pos, end_pos)
+    ]
+
+    # Only add variations if we have enough words
+    if len(words) > 2:
+        # Remove first, keep last
+        text_rm_first = ' '.join(words[1:])
+        variations.append((text_rm_first, start_pos + len(words[0]) + 1, end_pos))
+
+        # Keep first, remove last
+        text_rm_last = ' '.join(words[:-1])
+        variations.append((text_rm_last, start_pos, start_pos + len(text_rm_last)))
+
+    if prev_word:
+        # Add prev, keep last
+        text_add_prev = prev_word + ' ' + complete_text
+        variations.append((text_add_prev, prev_start, end_pos))
+
+    if next_word:
+        # Keep first, add next
+        text_add_next = complete_text + ' ' + next_word
+        variations.append((text_add_next, start_pos, next_end))
+
+    if len(words) > 3:
+        # Remove first, remove last
+        text_rm_both = ' '.join(words[1:-1])
+        variations.append((text_rm_both, start_pos + len(words[0]) + 1,
+                         start_pos + len(words[0]) + 1 + len(text_rm_both)))
+
+    if prev_word and len(words) > 2:
+        # Add prev, remove last
+        text_add_prev_rm_last = prev_word + ' ' + ' '.join(words[:-1])
+        variations.append((text_add_prev_rm_last, prev_start, prev_start + len(text_add_prev_rm_last)))
+
+    if next_word and len(words) > 2:
+        # Remove first, add next
+        text_rm_first_add_next = ' '.join(words[1:]) + ' ' + next_word
+        variations.append((text_rm_first_add_next, start_pos + len(words[0]) + 1, next_end))
+
+    if prev_word and next_word:
+        # Add prev, add next
+        text_add_both = prev_word + ' ' + complete_text + ' ' + next_word
+        variations.append((text_add_both, prev_start, next_end))
+
+    return variations
+
 def find_start_point(ocr_text, correct_text):
     """
     Find the starting point in correct text that best matches the first OCR text
+    First finds approximate position, then fine-tunes with word variations
     """
-    # print(f"Finding start point for text: {ocr_text[:50]}...")
     start_time = time.time()
 
+    # First pass - find approximate best position
     best_ratio = 0
     best_position = 0
     window_size = len(ocr_text)
@@ -224,38 +299,31 @@ def find_start_point(ocr_text, correct_text):
             best_ratio = ratio
             best_position = start_pos
 
-    best_window = ""
-    final_ratio = best_ratio
+    # Second pass - check variations only at best position
+    final_best_ratio = best_ratio
+    best_match = correct_text[best_position:best_position + window_size].rstrip()
 
-    variations = get_word_variations(correct_text[best_position:best_position + window_size],
-                                   best_position,
-                                   correct_text)
+    # Get variations at best position
+    variations = get_word_variations_both_ends(best_match, best_position, correct_text)
 
-    for window, end_pos in variations:
-        if not is_valid_text_boundary(window)[0]:
+    for var_text, var_start, var_end in variations:
+        if not is_valid_text_boundary(var_text)[0]:
             continue
 
-        ratio = SequenceMatcher(None, ocr_text.lower(), window.lower()).ratio()
-        if ratio > final_ratio:
-            final_ratio = ratio
-            best_window = window
+        ratio = SequenceMatcher(None, ocr_text.lower(), var_text.lower()).ratio()
+        if ratio > final_best_ratio:
+            final_best_ratio = ratio
+            best_match = var_text
+            best_position = var_start
 
-    if not best_window:  # If no better variation found, use original window
-        best_window = correct_text[best_position:best_position + window_size].rstrip()
-
-    return best_position, best_window
+    return best_position, best_match
 
 def get_edit_distance(str1, str2):
     """
     Calculate edit distance between two strings using dynamic programming
     """
-    if not isinstance(str1, str):
-        str1 = str(str1)
-    if not isinstance(str2, str):
-        str2 = str(str2)
-
-    str1 = unicodedata.normalize('NFC', str1)
-    str2 = unicodedata.normalize('NFC', str2)
+    str1 = preprocess_text(str1)
+    str2 = preprocess_text(str2)
 
     m, n = len(str1), len(str2)
     dp = [[0] * (n + 1) for _ in range(m + 1)]
@@ -285,15 +353,18 @@ def match_texts(csv_path, text_folder):
         key=get_page_number
     )
 
-    correct_text = ""
+    correct_text_parts = []
     for filename in text_files:
         with codecs.open(os.path.join(text_folder, filename), 'r', encoding='utf-8-sig') as f:
-            content = process_file_content(f.read())
-            if content.startswith('- '):
-                correct_text += "\n" + content if correct_text else content
-            else:
-                correct_text += " " + content if correct_text else content
+            content = process_file_content(f.read()).strip()
+            if content:  # Only add non-empty content
+                if content.startswith('- '):
+                    correct_text_parts.append('\n' + content)
+                else:
+                    correct_text_parts.append(content)
 
+    correct_text = ' '.join(correct_text_parts)
+    correct_text = ' '.join(correct_text.split())  # Normalize whitespace
     correct_text = unicodedata.normalize('NFC', correct_text)
 
     correct_text_pointer = 0
@@ -331,7 +402,7 @@ def match_texts(csv_path, text_folder):
                     if not is_valid_text_boundary(window)[0]:
                         continue
 
-                    score = get_edit_distance(ocr_text.lower(), window.lower())
+                    score = get_edit_distance(ocr_text, window)
                     position_penalty = abs(i - correct_text_pointer) / 100
                     total_score = score + position_penalty
 
@@ -356,6 +427,6 @@ def match_texts(csv_path, text_folder):
     print(f"\nTotal processing time: {time.time() - start_time:.2f} seconds")
 
 if __name__ == "__main__":
-    csv_path = "input/OCR_custom 181_210.csv"
+    csv_path = "input/OCR.csv"
     text_folder = "text/"
     match_texts(csv_path, text_folder)

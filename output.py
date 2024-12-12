@@ -5,12 +5,10 @@ from Levenshtein import distance
 def split_into_words(text):
     words = []
     current_word = ""
-
     for i, char in enumerate(text):
         if char == '-':
             if current_word:
                 words.append(current_word)
-                current_word = ""
             current_word = char
         elif char.isspace():
             if current_word:
@@ -18,10 +16,8 @@ def split_into_words(text):
                 current_word = ""
         else:
             current_word += char
-
     if current_word:
         words.append(current_word)
-
     return words
 
 def process_text_segment(text):
@@ -57,19 +53,15 @@ def process_text_segment(text):
 
     return text.replace(" ", "")
 
-def truncate_text(text, length=10):
-    if len(text) <= length * 2:
-        return text
-    return f"{text[:length]}...{text[-length:]}"
+def is_number_only(text):
+    return all(c.isdigit() or c.isspace() for c in text)
 
 def find_best_match(ocr_line, correct_text, tracking_pos):
+    if is_number_only(ocr_line):
+        return "", tracking_pos
+
     words = split_into_words(correct_text[tracking_pos:])
     processed_ocr = process_text_segment(ocr_line)
-    # log_output = []
-
-    # log_output.append(f"\n===== Line Processing =====")
-    # log_output.append(f"OCR: {truncate_text(ocr_line)}")
-    # log_output.append(f"Processed OCR: {truncate_text(processed_ocr)}")
 
     best_match = ""
     best_score = float('inf')
@@ -85,39 +77,21 @@ def find_best_match(ocr_line, correct_text, tracking_pos):
         processed_correct = process_text_segment(current_text)
         score = distance(processed_ocr, processed_correct)
 
-        # log_output.append(f"\nTry #{i+1}:")
-        # log_output.append(f"Text: {truncate_text(current_text)}")
-        # log_output.append(f"Processed: {truncate_text(processed_correct)}")
-        # log_output.append(f"Score: {score}")
-
         if len(processed_correct) > len(processed_ocr) + 10 and best_score != float('inf'):
-            # log_output.append("-> Score exceeded length, stopping")
             break
 
         if score < best_score:
             best_score = score
             best_match = current_text
             best_end_pos = tracking_pos + len(current_text)
-            # log_output.append(f"-> New best! Score: {best_score}")
 
     while best_end_pos < len(correct_text) and correct_text[best_end_pos].isspace():
         best_end_pos += 1
-
-    # log_output.append(f"\nResult:")
-    # log_output.append(f"Match: {truncate_text(best_match)}")
-    # log_output.append(f"Score: {best_score}")
-    # log_output.append(f"New pos: {best_end_pos}")
-    # log_output.append("========================")
-
-    # with open("output_log.txt", "a", encoding='utf-8') as log_file:
-    #     log_file.write("\n".join(log_output) + "\n")
 
     return best_match, best_end_pos
 
 def save_progress(df, output_file):
     df.to_csv(output_file, index=False, encoding='utf-8-sig')
-    with open("output_log.txt", "a", encoding='utf-8') as log_file:
-        log_file.write(f"\nSaved progress to {output_file}\n")
 
 def create_output_csv(df, ocr_text, processed_page, correct_page, position, correct_position):
     df['correct_text'] = ''
@@ -128,16 +102,9 @@ def create_output_csv(df, ocr_text, processed_page, correct_page, position, corr
 
     if len(df) > 0:
         tracking_pos = correct_position
-        with open("output_log.txt", "a", encoding='utf-8') as log_file:
-            log_file.write(f"\nStarting with {len(df)} lines\n")
-            log_file.write(f"Initial pos: {tracking_pos}\n")
-
         for idx, row in df.iterrows():
-            with open("output_log.txt", "a", encoding='utf-8') as log_file:
-                log_file.write(f"\nLine {idx + 1}/{len(df)}\n")
             ocr_line = row['OCR_text'].strip()
             best_match, new_tracking_pos = find_best_match(ocr_line, correct_page, tracking_pos)
-
             df.at[idx, 'correct_text'] = best_match
             tracking_pos = new_tracking_pos
 

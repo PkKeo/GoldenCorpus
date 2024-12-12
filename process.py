@@ -1,4 +1,3 @@
-# process.py
 import os
 import pandas as pd
 from format import replace_text, replace_vietnamese, remove_space
@@ -14,6 +13,9 @@ def read_text_file(file_path):
 
 def correct_text(text):
     return text.replace('\n', ' ').replace('–', '-')
+
+def remove_space_hyphen(text):
+    return text.replace('- ', '-')
 
 def process_files(ocr_path, text_path):
     ocr_path = os.path.join(ocr_path, 'OCR.csv')
@@ -43,6 +45,7 @@ def process_files(ocr_path, text_path):
         processed_page = replace_vietnamese(processed_page)
         processed_page = remove_space(processed_page)
         correct_page = correct_text(merged_page)
+        formatted_correct_page = remove_space_hyphen(correct_page)
 
         if text_files:
             first_file = os.path.join(text_path, text_files[0])
@@ -70,7 +73,7 @@ def process_files(ocr_path, text_path):
         print("\nCorrect text position:")
         print("POS:", correct_page[correct_position:correct_position+50])
 
-        return df, processed_ocr, processed_page, correct_page, position, correct_position
+        return df, processed_ocr, processed_page, formatted_correct_page, position, correct_position
 
     except FileNotFoundError:
         print("Error: The file was not found.")

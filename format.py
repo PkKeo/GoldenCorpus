@@ -5,7 +5,8 @@ def replace_text(text):
         '1': 'i',
         '4': 'a',
         '7': '?',
-        '...': '…'
+        '...': '…',
+        '–': '-'
     }
     for old, new in replacements.items():
         text = text.replace(old, new)
@@ -35,3 +36,6 @@ def replace_vietnamese(text):
     for old, new in vietnamese_map.items():
         text = text.replace(old, new)
     return text
+
+def remove_space(text):
+    return text.replace(" ", "")

@@ -32,3 +32,26 @@ class TextProcessor:
                 actual_end = min(end, len(formatted_text))
                 processed_lines[index] = formatted_text[start:actual_end]
         return processed_lines
+
+def find_ocr_position(ocr_text, page_text):
+    search_text = ocr_text[:50]
+    best_position = 0
+    best_matches = 0
+
+    for start in range(len(page_text)):
+        matches = 0
+        for i in range(min(len(search_text), len(page_text) - start)):
+            if search_text[i] == page_text[start + i]:
+                matches += 1
+
+        if matches > best_matches:
+            best_matches = matches
+            best_position = start
+
+    best_length = min(len(search_text), len(page_text) - best_position)
+    return best_position, best_length
+
+def display_match(ocr_text, page_text, position, length):
+    print("\nMatch Results:")
+    print("OCR:", ocr_text[:50])
+    print("PAG:", page_text[position:position+length])

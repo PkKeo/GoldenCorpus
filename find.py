@@ -51,6 +51,19 @@ def find_ocr_position(ocr_text, page_text):
     best_length = min(len(search_text), len(page_text) - best_position)
     return best_position, best_length
 
+def map_position(processed_text, correct_text, processed_pos):
+    p_idx = c_idx = 0
+    while p_idx < processed_pos and p_idx < len(processed_text) and c_idx < len(correct_text):
+        if processed_text[p_idx].isspace():
+            p_idx += 1
+            continue
+        if correct_text[c_idx].isspace():
+            c_idx += 1
+            continue
+        p_idx += 1
+        c_idx += 1
+    return c_idx
+
 def display_match(ocr_text, page_text, position, length):
     print("\nMatch Results:")
     print("OCR:", ocr_text[:50])

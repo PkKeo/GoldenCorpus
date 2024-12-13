@@ -67,6 +67,8 @@ def process_files(ocr_path, text_path):
 
         position, length = find_ocr_position(processed_ocr, processed_page)
         correct_position = map_position(processed_page, formatted_correct_page, position)
+        if formatted_correct_page[correct_position] == ' ':
+            correct_position += 1
 
         print("\nProcessed text match:")
         display_match(processed_ocr, processed_page, position, length)

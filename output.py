@@ -76,18 +76,16 @@ def find_best_match(ocr_line, correct_text, tracking_pos):
 
         processed_correct = process_text_segment(current_text)
         score = distance(processed_ocr, processed_correct)
-        print("Correct:", processed_correct)
-        print("OCR:", processed_ocr)
 
-        if len(processed_correct) > len(processed_ocr) + 10 and best_score != float('inf'):
+        if len(processed_correct) > len(processed_ocr) * 3:
             break
 
-        if score < best_score:
+        if score <= best_score:
             best_score = score
             best_match = current_text
             best_end_pos = tracking_pos + len(current_text)
 
-    while best_end_pos < len(correct_text) and correct_text[best_end_pos].isspace():
+    if correct_text[best_end_pos] == ' ':
         best_end_pos += 1
 
     return best_match, best_end_pos

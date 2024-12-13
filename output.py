@@ -2,7 +2,7 @@ import os
 import logging
 import pandas as pd
 
-logging.basicConfig(filename='processing.log', level=logging.INFO, format='%(asctime)s - %(message)s')
+# logging.basicConfig(filename='processing.log', level=logging.INFO, format='%(asctime)s - %(message)s')
 
 def calculate_distance(s1, s2):
     distances = [[0] * (len(s2) + 1) for _ in range(len(s1) + 1)]

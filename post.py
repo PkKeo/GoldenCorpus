@@ -11,7 +11,9 @@ def process_csv_to_excel(csv_file_path):
 
         def process_text(text):
             if isinstance(text, str) and text.startswith('-'):
-                return f"'{text}"
+                if len(text) > 1 and text[1] != ' ':
+                    return f"- {text[1:]}"
+                return text
             return text
 
         df['OCR_text'] = df['OCR_text'].apply(process_text)

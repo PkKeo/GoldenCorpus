@@ -9,13 +9,13 @@ if __name__ == "__main__":
     folder_path = os.path.join(os.getcwd(), 'input')
     output_folder = os.path.join(os.getcwd(), 'output')
 
-    process_text_files(text_folder_path)
-    process_excel_files(folder_path)
+    # process_text_files(text_folder_path)
+    # process_excel_files(folder_path)
 
-    df, processed_ocr, processed_page, correct_page, position, correct_position = process_files(folder_path, text_folder_path)
+    # df, processed_ocr, processed_page, correct_page, position, correct_position = process_files(folder_path, text_folder_path)
 
-    output_file = create_output_csv(df, processed_ocr, processed_page, correct_page, position, correct_position)
-    print(f"\nCreated output file: {output_file}")
+    # output_file = create_output_csv(df, processed_ocr, processed_page, correct_page, position, correct_position)
+    # print(f"\nCreated output file: {output_file}")
 
     processed_files = convert_folder_to_excel(output_folder)
     print(f"\nConverted files: {processed_files}")

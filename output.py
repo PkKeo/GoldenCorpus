@@ -1,5 +1,6 @@
 import os
 import logging
+import pandas as pd
 
 logging.basicConfig(filename='processing.log', level=logging.INFO, format='%(asctime)s - %(message)s')
 
@@ -99,7 +100,7 @@ def find_best_match(ocr_line, correct_text, tracking_pos):
         last_score = score
         score = calculate_distance(processed_ocr, processed_correct)
 
-        logging.info(f'Processed OCR: {processed_ocr}, Processed Correct: {processed_correct}, Score: {score}')
+        # logging.info(f'Processed OCR: {processed_ocr}, Processed Correct: {processed_correct}, Score: {score}')
 
         if len(processed_correct) > len(processed_ocr) * 2:
             break
@@ -127,7 +128,7 @@ def create_output_csv(df, ocr_text, processed_page, correct_page, position, corr
     if len(df) > 0:
         tracking_pos = correct_position
         for idx, row in df.iterrows():
-            ocr_line = row['OCR_text'].strip()
+            ocr_line = str(row['OCR_text']).strip() if pd.notna(row['OCR_text']) else ''
             best_match, new_tracking_pos = find_best_match(ocr_line, correct_page, tracking_pos)
             df.at[idx, 'correct_text'] = best_match
             tracking_pos = new_tracking_pos

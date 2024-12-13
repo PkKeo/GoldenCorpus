@@ -24,7 +24,7 @@ def process_files(ocr_path, text_path):
         processor = TextProcessor()
 
         for index, row in df.iterrows():
-            processor.add_line(index, row['OCR_text'])
+            processor.add_line(index, str(row['OCR_text']))
 
         merged_ocr = processor.get_merged_text()
         processed_ocr = replace_text(merged_ocr)
@@ -79,7 +79,7 @@ def process_files(ocr_path, text_path):
 
     except FileNotFoundError:
         print("Error: The file was not found.")
-        return None, None, None, None
+        return None, None, None, None, None, None
     except Exception as e:
         print(f"An error occurred: {str(e)}")
-        return None, None, None, None
+        return None, None, None, None, None, None

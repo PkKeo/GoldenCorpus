@@ -1,6 +1,25 @@
-import pandas as pd
 import os
-from Levenshtein import distance
+import logging
+
+logging.basicConfig(filename='processing.log', level=logging.INFO, format='%(asctime)s - %(message)s')
+
+def calculate_distance(s1, s2):
+    distances = [[0] * (len(s2) + 1) for _ in range(len(s1) + 1)]
+
+    for i in range(len(s1) + 1):
+        distances[i][0] = i
+    for j in range(len(s2) + 1):
+        distances[0][j] = j
+
+    for i1, c1 in enumerate(s1, start=1):
+        for i2, c2 in enumerate(s2, start=1):
+            if c1 == c2:
+                distances[i1][i2] = distances[i1 - 1][i2 - 1]
+            else:
+                distances[i1][i2] = 1 + min(distances[i1 - 1][i2 - 1],
+                                            distances[i1][i2 - 1],
+                                            distances[i1 - 1][i2])
+    return distances[-1][-1]
 
 def split_into_words(text):
     words = []
@@ -67,20 +86,25 @@ def find_best_match(ocr_line, correct_text, tracking_pos):
     best_score = float('inf')
     best_end_pos = tracking_pos
     current_text = ""
+    score = float('inf')
 
     for i in range(len(words)):
+
         if i == 0:
             current_text = words[i]
         else:
             current_text = current_text + " " + words[i]
 
         processed_correct = process_text_segment(current_text)
-        score = distance(processed_ocr, processed_correct)
+        last_score = score
+        score = calculate_distance(processed_ocr, processed_correct)
 
-        if len(processed_correct) > len(processed_ocr) * 3:
+        logging.info(f'Processed OCR: {processed_ocr}, Processed Correct: {processed_correct}, Score: {score}')
+
+        if len(processed_correct) > len(processed_ocr) * 2:
             break
 
-        if score <= best_score:
+        if last_score > score:
             best_score = score
             best_match = current_text
             best_end_pos = tracking_pos + len(current_text)

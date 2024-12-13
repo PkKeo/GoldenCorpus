@@ -54,7 +54,7 @@ def process_files(ocr_path, text_path):
             print(first_line)
 
         print(f"\nFirst 50 chars of correct page text:")
-        print(correct_page[:50])
+        print(formatted_correct_page[:50])
 
         print(f"\nFirst line of processed OCR text:")
         processed_lines = processor.process_formatted_text(processed_ocr)
@@ -66,12 +66,12 @@ def process_files(ocr_path, text_path):
         print(processed_page[:50])
 
         position, length = find_ocr_position(processed_ocr, processed_page)
-        correct_position = map_position(processed_page, correct_page, position)
+        correct_position = map_position(processed_page, formatted_correct_page, position)
 
         print("\nProcessed text match:")
         display_match(processed_ocr, processed_page, position, length)
         print("\nCorrect text position:")
-        print("POS:", correct_page[correct_position:correct_position+50])
+        print("POS:", formatted_correct_page[correct_position:correct_position+50])
 
         return df, processed_ocr, processed_page, formatted_correct_page, position, correct_position
 

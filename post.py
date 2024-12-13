@@ -9,15 +9,35 @@ def process_csv_to_excel(csv_file_path):
         for col in ['Topleft', 'TopRight', 'BottomLeft', 'BottomRight']:
             df[col] = df[col].astype(str)
 
-        def process_text(text):
-            if isinstance(text, str) and text.startswith('-'):
-                if len(text) > 1 and text[1] != ' ':
-                    return f"- {text[1:]}"
+        def process_ocr_text(text):
+            if not isinstance(text, str):
                 return text
-            return text
+            result = []
+            parts = text.split()
+            for part in parts:
+                if part.startswith('-'):
+                    result.append(f"-{part[1:]}")
+                else:
+                    result.append(part)
+            return ' '.join(result)
 
-        df['OCR_text'] = df['OCR_text'].apply(process_text)
-        df['correct_text'] = df['correct_text'].apply(process_text)
+        def process_correct_text(text):
+            if not isinstance(text, str):
+                return text
+            result = []
+            parts = text.split()
+            for part in parts:
+                if part.startswith('-'):
+                    if len(part) > 1 and part[1] != ' ':
+                        result.append(f"- {part[1:]}")
+                    else:
+                        result.append(part)
+                else:
+                    result.append(part)
+            return ' '.join(result)
+
+        df['OCR_text'] = df['OCR_text'].apply(process_ocr_text)
+        df['correct_text'] = df['correct_text'].apply(process_correct_text)
 
         excel_name = os.path.splitext(os.path.basename(csv_file_path))[0] + '.xlsx'
         output_file = os.path.join(os.path.dirname(csv_file_path), excel_name)

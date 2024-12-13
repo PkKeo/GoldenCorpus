@@ -2,8 +2,6 @@ import os
 import logging
 import pandas as pd
 
-# logging.basicConfig(filename='processing.log', level=logging.INFO, format='%(asctime)s - %(message)s')
-
 def calculate_distance(s1, s2):
     distances = [[0] * (len(s2) + 1) for _ in range(len(s1) + 1)]
 
@@ -76,6 +74,18 @@ def process_text_segment(text):
 def is_number_only(text):
     return all(c.isdigit() or c.isspace() for c in text)
 
+def find_previous_combinations(text, end_pos):
+    words = split_into_words(text[:end_pos].strip())
+    combinations = []
+
+    for i in range(max(0, len(words) - 5), len(words) + 1):
+        combo = " ".join(words[i:])
+        start_pos = text[:end_pos].rfind(combo)
+        if start_pos != -1:
+            combinations.append((start_pos, combo))
+
+    return combinations
+
 def find_best_match(ocr_line, correct_text, tracking_pos):
     if is_number_only(ocr_line):
         return "", tracking_pos
@@ -89,8 +99,8 @@ def find_best_match(ocr_line, correct_text, tracking_pos):
     current_text = ""
     score = float('inf')
 
+    # First find the forward match
     for i in range(len(words)):
-
         if i == 0:
             current_text = words[i]
         else:
@@ -100,8 +110,6 @@ def find_best_match(ocr_line, correct_text, tracking_pos):
         last_score = score
         score = calculate_distance(processed_ocr, processed_correct)
 
-        # logging.info(f'Processed OCR: {processed_ocr}, Processed Correct: {processed_correct}, Score: {score}')
-
         if len(processed_correct) > len(processed_ocr) * 2:
             break
 
@@ -109,6 +117,25 @@ def find_best_match(ocr_line, correct_text, tracking_pos):
             best_score = score
             best_match = current_text
             best_end_pos = tracking_pos + len(current_text)
+
+    if best_match:
+        end_pos = tracking_pos + len(best_match)
+        text_before = correct_text[:tracking_pos].strip()
+        prev_words = split_into_words(text_before)
+
+        for i in range(min(5, len(prev_words))):
+            test_words = prev_words[-(i+1):] + [best_match]
+            test_text = " ".join(test_words)
+
+            processed_test = process_text_segment(test_text)
+            test_score = calculate_distance(processed_ocr, processed_test)
+
+            if test_score < best_score:
+                best_score = test_score
+                best_match = test_text
+                start_pos = correct_text.rfind(test_text, 0, end_pos)
+                if start_pos != -1:
+                    tracking_pos = start_pos
 
     if correct_text[best_end_pos] == ' ':
         best_end_pos += 1

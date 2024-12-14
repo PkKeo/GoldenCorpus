@@ -26,7 +26,7 @@ def load_excel_column(file_path, column_name):
 
 
 # Example usage
-excel_file_path = "D:\Golden_Corpus\pythonProject1\OCR_custom_61_90.xlsx"
+excel_file_path = "C:/Users/Admin/Desktop/Assignment/Introduction to Natural Language Processing/Final/GoldenCorpus/OCR_custom 181_182.xlsx"
 column_name = "OCR_text"
 
 # Get the list of strings from the column
@@ -297,7 +297,7 @@ def process_typo_sentences_with_alignment(folder, list_typo_sentence):
     #type 3: This is not a good OCR (wrong text detection)
     count = 2
     patience = 0
-    blacklist_file = r"D:\Golden_Corpus\pythonProject1\black_list.txt"
+    blacklist_file = r"C:\Users\Admin\Desktop\Assignment\Introduction to Natural Language Processing\Final\GoldenCorpus\black_list.txt"
     for typo_sentence in list_typo_sentence:
         print(f'Processing on sentence {count}')
         if(does_not_contain_vietnamese(typo_sentence) or is_in_blacklist(typo_sentence, blacklist_file)):
@@ -363,7 +363,7 @@ def process_typo_sentences_with_alignment(folder, list_typo_sentence):
 
 
 # Example usage
-folder_path = r"D:\Golden_Corpus\pythonProject1\extracted_text\content\vietnamese-ocr\extracted_text"
+folder_path = r"C:\Users\Admin\Desktop\Assignment\Introduction to Natural Language Processing\Final\GoldenCorpus\extracted_text\content\vietnamese-ocr\extracted_text"
 alignments = process_typo_sentences_with_alignment(folder_path, ocr_texts)
 
 
@@ -414,5 +414,3 @@ def add_correct_text_column(file_path, alignments):
 
 
 add_correct_text_column(excel_file_path, alignments)
-
-
